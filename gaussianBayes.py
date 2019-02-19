@@ -1,176 +1,195 @@
-
-import numpy as np
-from random import randrange
-import csv
+import bagofwords
+import tfidf
 import math
+import parser
+import string
+import pickle #caching
+import os
 
+class GN:
+    
+    posProbs={}
+    negProbs={}
+    stopWords=["a", "about", "above", "across", "after", "afterwards", 
+    "again", "all", "almost", "alone", "along", "already", "also","although", "always", "am", "among", "amongst", "amoungst", "amount", "an", "and", "another", "any", "anyhow", "anyone", "anything", "anyway", "anywhere", "are", "as", "at", "be", "became", "because", "become","becomes", "becoming", "been", "before", "behind", "being", "beside", "besides", "between", "beyond", "both", "but", "by","can", "cannot", "cant", "could", "couldnt", "de", "describe", "do", "done", "each", "eg", "either", "else", "enough", "etc", "even", "ever", "every", "everyone", "everything", "everywhere", "except", "few", "find","for","found", "four", "from", "further", "get", "give", "go", "had", "has", "hasnt", "have", "he", "hence", "her", "here", "hereafter", "hereby", "herein", "hereupon", "hers", "herself", "him", "himself", "his", "how", "however", "i", "ie", "if", "in", "indeed", "is", "it", "its", "itself", "keep", "least", "less", "ltd", "made", "many", "may", "me", "meanwhile", "might", "mine", "more", "moreover", "most", "mostly", "much", "must", "my", "myself", "name", "namely", "neither", "never", "nevertheless", "next","no", "nobody", "none", "noone", "nor", "not", "nothing", "now", "nowhere", "of", "off", "often", "on", "once", "one", "only", "onto", "or", "other", "others", "otherwise", "our", "ours", "ourselves", "out", "over", "own", "part","perhaps", "please", "put", "rather", "re", "same", "see", "seem", "seemed", "seeming", "seems", "she", "should","since", "sincere","so", "some", "somehow", "someone", "something", "sometime", "sometimes", "somewhere", "still", "such", "take","than", "that", "the", "their", "them", "themselves", "then", "thence", "there", "thereafter", "thereby", "therefore", "therein", "thereupon", "these", "they",
+    "this", "those", "though", "through", "throughout","thru", "thus", "to", "together", "too", "toward", "towards","under", "until", "up", "upon", "us",
+    "very", "was", "we", "well", "were", "what", "whatever", "when","whence", "whenever", "where", "whereafter", "whereas", "whereby",
+    "wherein", "whereupon", "wherever", "whether", "which", "while", "who", "whoever", "whom", "whose", "why", "will", "with",
+    "within", "without", "would", "yet", "you", "your", "yours", "yourself", "yourselves"]+ ["i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", "hers", "herself", "it", "its", "itself", "they", "them", "their", "theirs", "themselves", "what", "which", "who", "whom", "this", "that", "these", "those", "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having", "do", "does", "did", "doing", "a", "an", "the", "and", "but", "if", "or", "because", "as", "until", "while", "of", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "s", "t", "can", "will", "just", "don", "should", "now"]
+       
+    def __init__(self,option,train1,train2):
+        if option=="bag":
+            pickle_filepathBPProbs = "./bpProbs.pickle"
+            pickle_filepathBNProbs = "./bnProbs.pickle"
+            print(option)
+            self.ex=bagofwords.BagOfWords(train1,train2)
+            if not os.path.exists(pickle_filepathBPProbs):
+                print("training data")
+                self.fit(self.ex.posVectors,self.ex.negVectors,self.ex.posVocab,self.ex.negVocab)
+                with open(pickle_filepathBPProbs, 'wb') as pickle_handle:
+                    pickle.dump(self.posProbs, pickle_handle)
+                with open(pickle_filepathBNProbs, 'wb') as pickle_handle:
+                    pickle.dump(self.negProbs, pickle_handle)
+                print("data cached")
+            else:
+                print("loading training data")
+                with open(pickle_filepathBPProbs, 'rb') as pickle_handle:
+                    self.posProbs=pickle.load(pickle_handle)
+                with open(pickle_filepathBNProbs, 'rb') as pickle_handle:
+                    self.negProbs=pickle.load(pickle_handle)
+                print("data loaded")
 
-def load_csv_dataset(filename):
-    """Load the CSV file"""
-    lines = csv.reader(open(filename, 'rb'))
-    dataset = list(lines)
-    for i in range(len(dataset)):
-        dataset[i] = [float(x) for x in dataset[i]]  # Convert String to Float numbers
-    return dataset
-
-
-def mean(numbers):
-    """Returns the mean of numbers"""
-    return np.mean(numbers)
-
-
-def stdev(numbers):
-    """Returns the std_deviation of numbers"""
-    return np.std(numbers)
-
-
-def sigmoid(z):
-    """Returns the sigmoid number"""
-    return 1.0 / (1.0 + math.exp(-z))
-
-
-def cross_validation_split(dataset, n_folds):
-    """Split dataset into the k folds. Returns the list of k folds"""
-    dataset_split = list()
-    dataset_copy = list(dataset)
-    fold_size = int(len(dataset) / n_folds)
-    for i in range(n_folds):
-        fold = list()
-        while len(fold) < fold_size:
-            index = randrange(len(dataset_copy))
-            fold.append(dataset_copy.pop(index))
-        dataset_split.append(fold)
-    return dataset_split
-
-
-def accuracy_metric(actual, predicted):
-    """Calculate accuracy percentage"""
-    correct = 0
-    for i in range(len(actual)):
-        if actual[i] == predicted[i]:
-            correct += 1
-    return correct / float(len(actual)) * 100.0
-
-
-def evaluate_algorithm(dataset, algorithm, n_folds, ):
-    """Evaluate an algorithm using a cross validation split"""
-    folds = cross_validation_split(dataset, n_folds)
-    scores = list()
-    for fold in folds:
-        train_set = list(folds)
-        train_set.remove(fold)
-        train_set = sum(train_set, [])
-        test_set = list()
-        for row in fold:
-            row_copy = list(row)
-            test_set.append(row_copy)
-            row_copy[-1] = None
-        predicted = algorithm(train_set, test_set, )
-        actual = [row[-1] for row in fold]
-        accuracy = accuracy_metric(actual, predicted)
-        scores.append(accuracy)
-    return scores
-
-
-#############################
-#############################
-######## Naive Bayes  #######
-#############################
-#############################
-
-
-def separate_by_class(dataset):
-    """Split training set by class value"""
-    separated = {}
-    for i in range(len(dataset)):
-        row = dataset[i]
-        if row[-1] not in separated:
-            separated[row[-1]] = []
-        separated[row[-1]].append(row)
-    return separated
-
-
-def model(dataset):
-    """Find the mean and standard deviation of each feature in dataset"""
-    models = [(mean(attribute), stdev(attribute)) for attribute in zip(*dataset)]
-    models.pop() #Remove last entry because it is class value.
-    return models
-
-
-def model_by_class(dataset):
-    """find the mean and standard deviation of each feature in dataset by their class"""
-    separated = separate_by_class(dataset)
-    class_models = {}
-    for (classValue, instances) in separated.iteritems():
-        class_models[classValue] = model(instances)
-    return class_models
-
-
-def calculate_pdf(x, mean, stdev):
-    """Calculate probability using gaussian density function"""
-    if stdev == 0.0:
-        if x == mean:
-            return 1.0
-        else:
-            return 0.0
+        elif option=="tf":
+            pickle_filepathTPProbs = "./tpProbs.pickle"
+            pickle_filepathTNProbs = "./tnProbs.pickle"
+            print(option)
+            self.ex=tfidf.tfidf(train1,train2)
+            if not os.path.exists(pickle_filepathTPProbs):
+                print("training data")
+                self.fit(self.ex.posVectors,self.ex.negVectors,self.ex.posVocab,self.ex.negVocab)
+                with open(pickle_filepathTPProbs, 'wb') as pickle_handle:
+                    pickle.dump(self.posProbs, pickle_handle)
+                with open(pickle_filepathTNProbs, 'wb') as pickle_handle:
+                    pickle.dump(self.negProbs, pickle_handle)
+                print("data cached")
+            else:
+                print("loading training data")
+                with open(pickle_filepathTPProbs, 'rb') as pickle_handle:
+                    self.posProbs=pickle.load(pickle_handle)
+                with open(pickle_filepathTNProbs, 'rb') as pickle_handle:
+                    self.negProbs=pickle.load(pickle_handle)
+                print("data loaded")
         
-    exponent = math.exp(-(math.pow(x - mean, 2) / (2 * math.pow(stdev, 2))))
-    return 1 / (math.sqrt(2 * math.pi) * stdev) * exponent
+        
 
+    def fit(self,posVectors,negVectors,posVocab,negVocab):
+        posMean={}
+        negMean={}
+        posVar={}
+        negVar={}
+        numPosRevs=len(posVectors)
+        numNegRevs=len(negVectors)
+        for word in posVocab:
+            posFreq=0.0
+            for vector in posVectors:
+                if word in vector.keys():
+                    posFreq+=vector[word]
+            posMean[word]=(posFreq/numPosRevs)
+            temp=0.0
+            for vector in posVectors:
+                value=0.0
+                if word in vector.keys():
+                    value=vector[word]
+                temp+=(value-posMean[word])**2
+            posVar[word]=temp/numPosRevs
+            if word in self.posProbs.keys():
+                continue
+            else:
+                pProb=0.0
+                for vector in posVectors:
+                    prevP=0.1 #fixes domain error with estimate of prob
+                    value=0.0
+                    if word in vector.keys():
+                        value=vector[word]
+                    prevP=self.gaussianProb(value,posMean[word],posVar[word],prevP)
+                    pProb+=prevP
+                self.posProbs[word]=pProb
+        for word in negVocab:
+            negFreq=0.0
+            for vector in negVectors:
+                if word in vector.keys():
+                    negFreq+=vector[word]
+            negMean[word]=(negFreq/numNegRevs)
+            temp=0.0
+            for vector in negVectors:
+                value=0.0
+                if word in vector.keys():
+                    value=vector[word]
+                temp+=(value-negMean[word])**2
+            negVar[word]=temp/numPosRevs
+            if word in self.negProbs.keys():
+                continue
+            else:
+                nProb=0.0
+                for vector in negVectors:
+                    prevN=0.1 #fixes domain error with estimate of prob
+                    value=0.0
+                    if word in vector.keys():
+                        value=vector[word]
+                    prevN=self.gaussianProb(value,negMean[word],negVar[word],prevN)
+                    nProb+=prevN
+                self.negProbs[word]=nProb
 
-def calculate_class_probabilities(models, input):
-    """Calculate the class probability for input sample. Combine probability of each feature"""
-    probabilities = {}
-    for (classValue, classModels) in models.iteritems():
-        probabilities[classValue] = 1
-        for i in range(len(classModels)):
-            (mean, stdev) = classModels[i]
-            x = input[i]
-            print(x)
-            print(mean)
-            print(stdev)
-            probabilities[classValue] *= calculate_pdf(x, mean, stdev)
-    return probabilities
+    def gaussianProb(self,wordFreq,wordMean,wordVar,prev):
+        right=0
+        exponentnum=(wordFreq-wordMean)*(wordFreq-wordMean)
+        exponentden=2*wordVar
+        right+=(-1*exponentnum/exponentden)
+        left=math.log(1/math.sqrt(2*math.pi*(wordVar)))
+        #if(right*left)==0.0:
+            #return prev
+        return (left*right)
 
-
-def predict(models, inputVector):
-    """Compare probability for each class. Return the class label which has max probability."""
-    probabilities = calculate_class_probabilities(models, inputVector)
-    (bestLabel, bestProb) = (None, -1)
-    for (classValue, probability) in probabilities.iteritems():
-        if bestLabel is None or probability > bestProb:
-            bestProb = probability
-            bestLabel = classValue
-    return bestLabel
-
-
-def getPredictions(models, testSet):
-    """Get class label for each value in test set."""
-    predictions = []
-    for i in range(len(testSet)):
-        result = predict(models, testSet[i])
-        predictions.append(result)
-    return predictions
-
-
-def naive_bayes(train, test, ):
-    """Create a naive bayes model. Then test the model and returns the testing result."""
-    summaries = model_by_class(train)
-    predictions = getPredictions(summaries, test)
-    return predictions
-
-
-def main():
-    filename = 'banknote.csv'
-    dataset = load_csv_dataset(filename)
-
-    n_folds = 3
-
-    print "---------- Gaussian Naive Bayes ---------------"
-    accuracy_naive = evaluate_algorithm(dataset, naive_bayes, n_folds)
-    print "Naive Bayes Classification"
-    print 'Accuracy in each fold: %s' % accuracy_naive
-    print 'Average Accuracy: %f' % (sum(accuracy_naive) / len(accuracy_naive))
-
-
-#main()
+    def predict(self,inputFile1, inputFile2):
+        print("predicting")
+        reviews1=parser.process(inputFile1)
+        posReviews1=0.0
+        negReviews1=0.0
+        for review in reviews1:
+            posWords1=0.0
+            negWords1=0.0
+            for word in review.split():
+                posProb1=0.0
+                negProb1=0.0
+                cleanedWord=word.translate(str.maketrans('','',string.punctuation)).lower()
+                if cleanedWord in self.stopWords:
+                    continue
+                else:
+                    if cleanedWord in self.ex.posVocab:
+                        posProb1+=self.posProbs[cleanedWord]
+                    if cleanedWord in self.ex.negVocab:
+                        negProb1+=self.negProbs[cleanedWord]
+                if(posProb1>negProb1):
+                    posWords1+=1
+                else:
+                    negWords1+=1
+            if(posWords1>negWords1):
+                posReviews1+=1
+            else:
+                negReviews1+=1
+        if(posReviews1>negReviews1):
+            print("Test File 1 (positive) accuracy: {} %".format(posReviews1/(posReviews1+negReviews1)*100))
+        else:
+            print("Test File 1 (negative) accuracy: {} %".format(negReviews1/(posReviews1+negReviews1)*100))
+        reviews2=parser.process(inputFile2)
+        posReviews2=0.0
+        negReviews2=0.0
+        for review in reviews2:
+            posWords2=0.0
+            negWords2=0.0
+            for word in review.split():
+                posProb2=0.0
+                negProb2=0.0
+                cleanedWord=word.translate(str.maketrans('','',string.punctuation)).lower()
+                if cleanedWord in self.stopWords:
+                    continue
+                else:
+                    if cleanedWord in self.ex.posVocab:
+                        posProb2+=self.posProbs[cleanedWord]
+                    if cleanedWord in self.ex.negVocab:
+                        negProb2+=self.negProbs[cleanedWord]
+                if(posProb2>negProb2):
+                    posWords2+=1
+                else:
+                    negWords2+=1
+            if(posWords2>negWords2):
+                posReviews2+=1
+            else:
+                negReviews2+=1
+        if(posReviews2>negReviews2):
+            print("Test File 2 (positive) accuracy: {} %".format(posReviews2/(posReviews2+negReviews2)*100))
+        else:
+            print("Test File 2 (negative) accuracy: {} %".format(negReviews2/(posReviews2+negReviews2)*100))
+gn=GN("bag","training_pos.txt","training_neg.txt")
+print("predicting")
+gn.predict("testinput.txt","testinput2.txt")
