@@ -1,4 +1,4 @@
-import pickle
+import pickle #caching
 import os
 import string
 import parser
